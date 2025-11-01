@@ -9,13 +9,14 @@ const app = createApp(App)
 const axios = require('axios')
 // axios.default.baseURL = 'http://10.138.42.155/'
 installElementPlus(app)
-app.use(router)
-app.use(store).use(router).mount('#app')
-app.config.globalProperties.$backend = ref("http://10.138.42.155:8086/")
+console.log("Hi there");
+
+app.config.globalProperties.$backend = ref("http://10.138.42.155:8088")
 // app.config.globalProperties.$backend = "http://192.168.1.155:8086/"
 // app.config.globalProperties.$backend = "http://localhost:8086/"
 app.config.globalProperties.$axios = axios
 axios.defaults.withCredentials = true
+app.use(store).use(router).mount('#app')
 axios.interceptors.request.use(
     config => {
         const token = sessionStorage.getItem('token');

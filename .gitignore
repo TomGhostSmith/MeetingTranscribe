@@ -1,4 +1,5 @@
 model
+HF_TOKEN
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
