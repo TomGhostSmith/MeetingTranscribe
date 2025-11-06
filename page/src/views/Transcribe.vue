@@ -21,9 +21,14 @@
       <pane min-size="20" max-size="60" size="20">
         <el-aside style="height: 100%; width: 100%">
         <h2>Transcript</h2>
-        <p style="text-align: left; padding: 20px">
-          <span class="script" v-for="(s, t) in scripts" :key="t" :style="getColor(s[1], s[2])" @click="jumpTo(s[1])">{{ s[0] }}</span>
-        </p>
+        <div style="text-align: left; padding: 20px">
+          <div v-for="(seg, t) in scripts" :key="t" >
+            <p class="speaker">{{ seg[0] }}: </p>
+            <p>
+              <span class="script" v-for="(s, t) in seg[1]" :key="t" :style="getColor(s[1], s[2])" @click="jumpTo(s[1])">{{ s[0] }}</span>
+            </p>
+          </div>
+        </div>
         
       </el-aside>
     </pane>
@@ -48,13 +53,6 @@ export default {
       }
   },
   methods: {
-      getNetThresh(unit)
-      {
-          console.log();
-          
-          if (unit === 'KB/s') return this.NetKBThresh
-          else return this.NetMBThresh
-      },
       getColor(t1, t2)
       {
         
@@ -112,6 +110,7 @@ export default {
       if (resp.status === 200){
         _this.scripts = resp.data
         
+        
       }
       else
       {
@@ -154,6 +153,9 @@ export default {
   font-size: 20px!important;
 }
 
+.speaker{
+  font-size: 20px
+}
 .script{
   cursor: pointer;
   font-size: 18px

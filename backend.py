@@ -17,17 +17,32 @@ def serve_file(filename):
 @app.route("/api/getScript/<path:filename>", methods=["GET"])
 def echo_api(filename):
     results = []
+    segment = []
+    speaker = None
     prevStart = 0
     prevText = None
+    insertSpeaker = None
     with open(f"{VIDEO_DIR}/{filename}.script") as fp:
+    # with open(f"working/test.script") as fp:
         for line in fp:
-            s, t= line.strip().split('\t', 1)
+            if ('\t' not in line):
+                insertSpeaker = line.strip()
+                continue
+            # s, t= line.strip().split('\t', 1)
+            s, t, e= line.strip().split('\t')
             thisStart = float(t)
             if (prevText):
-                results.append([prevText, prevStart, thisStart])
+                segment.append([prevText, prevStart, thisStart])
+            if (insertSpeaker):
+                if (segment):
+                    results.append([speaker, segment])
+                    segment = []
+                speaker = insertSpeaker
+                insertSpeaker = None
             prevText = s
             prevStart = thisStart
-    results.append([prevText, prevStart, prevStart + 100])
+    segment.append([prevText, prevStart, prevStart + 100])
+    results.append([speaker, segment])
     return jsonify(results)
 
 if __name__ == "__main__":

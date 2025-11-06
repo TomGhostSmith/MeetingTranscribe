@@ -41,34 +41,8 @@ def getHFToken():
 
 def extractAudio(videoFile, audioFile):
     cmd = f'ffmpeg -i {videoFile} -vn -acodec libmp3lame -ar 16000 -ac 1 {audioFile}'
+    # cmd = f'ffmpeg -i {videoFile} -vn -acodec libmp3lame -ar 16000 -ss 00:00:00 -to 00:05:00 -ac 1 {audioFile}'
     subprocess.run(cmd, shell=True)
-
-def transcribeWithWhisperX(audioFile):  # problem: whisperX will change the text!!!
-    device = "cuda"
-    prompt = (
-        "This is a group meeting with 诗涛 "
-        "They are discussing a paper in metagenomic fields."
-    )
-
-    model = whisperx.load_model("model/faster-whisper-large-v3", device=device, compute_type="float16", asr_options={
-        "beam_size": 5,
-        "initial_prompt": prompt
-    })
-    audio = whisperx.load_audio(audioFile)
-
-    result = model.transcribe(audio)
-
-    # 3. Assign speaker labels
-    diarize_model = DiarizationPipeline("model/speaker-diarization-3.1/config.yaml", use_auth_token=getHFToken(), device=device)
-
-    # add min/max number of speakers if known
-    diarize_segments = diarize_model(audio)
-    diarize_model(audio, min_speakers=3, max_speakers=3)
-
-    result = whisperx.assign_word_speakers(diarize_segments, result)
-    print(diarize_segments)
-    print(result["segments"]) # segments are now assigned speaker IDs
-    return
 
 def transcribe(audioFile, vttFile, scriptFile):
     device = "cuda"
@@ -76,40 +50,22 @@ def transcribe(audioFile, vttFile, scriptFile):
         "This is a group meeting with 诗涛 "
         "They are discussing a paper in metagenomic fields."
     )
-    # model = WhisperModel("model/faster-whisper-large-v3", device="cuda", compute_type="float16")
+    model = WhisperModel("model/faster-whisper-large-v3", device="cuda", compute_type="float16")
 
-    # segments, info = model.transcribe(audioFile, beam_size=5, vad_filter=True, initial_prompt=prompt)
+    segments, info = model.transcribe(audioFile, beam_size=5, vad_filter=True, initial_prompt=prompt)
 
-    # videoLength = getVideoLength(audioFile)
+    videoLength = getVideoLength(audioFile)
 
-    # # vttFP = open(vttFile, 'wt')
-    # # scriptFP = open(scriptFile, 'wt')
-    # # vttFP.write("WEBVTT\n")
+    scriptFP = open(scriptFile, 'wt')
+    vttFP = open(vttFile, 'wt')
+    vttFP.write("WEBVTT\n")
     speakerFP = open("working/speaker.txt", 'wt')
-    # pbar = tqdm(total=videoLength, unit="sec", desc="transcribe")
-    # lastEnd = 0
-    # for segment in segments:
-    #     print(segment.text.strip() + ", " + str(segment.start) + ", " + str(segment.end))
-    #     # vttFP.write(f"\n{formatTime(segment.start)} --> {formatTime(segment.end)}\n")
-    #     # vttFP.write(segment.text.strip() + "\n")
 
-    #     # scriptFP.write(f"{segment.text.strip()}\t{segment.start}\n")
-
-    #     pbar.update(segment.end - lastEnd)
-    #     lastEnd = segment.end
-    #     # print(f"[{segment.start:.2f} - {segment.end:.2f}] {segment.text.strip()}")
-
-    # pbar.close()
-
+    # recognize speaker
     pipeline = Pipeline.from_pretrained("model/speaker-diarization-community-1")
 
     # send pipeline to GPU (when available)
     pipeline.to(torch.device("cuda"))
-
-    # pipeline._pipelines["segmentation"].min_duration_on = 5.0  # minimum speech segment duration (seconds)
-    # pipeline._pipelines["segmentation"].min_duration_off = 0.3 # minimum silence between segments
-    # pipeline._pipelines["segmentation"].step = 0.5            # step size between analysis frames
-    # pipeline._pipelines.pop("resegmentation", None)
 
     # apply pretrained pipeline (with optional progress hook)
     with ProgressHook() as hook:
@@ -117,11 +73,68 @@ def transcribe(audioFile, vttFile, scriptFile):
         output = pipeline(audioFile, hook=hook, num_speakers=4)  # runs locally
 
     # print the result
+    allSpeaker = set()
+    speakerList = []
     for turn, speaker in output.speaker_diarization:
         speakerFP.write(f"{turn.start:.2f}\t{turn.end:.2f}\t{speaker}\n")
+        speakerList.append([turn.start, turn.end, speaker])
         # print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
+        allSpeaker.add(speaker)
+
+    speakerFP.close()
 
 
+    pbar = tqdm(total=videoLength, unit="sec", desc="transcribe")
+    lastEnd = 0
+    lastSpeaker = None
+    lastSpeakerSegIdx = 0
+    for segment in segments:
+        # print(segment.text.strip() + ", " + str(segment.start) + ", " + str(segment.end))
+        vttFP.write(f"\n{formatTime(segment.start)} --> {formatTime(segment.end)}\n")
+        vttFP.write(segment.text.strip() + "\n")
+
+
+        # calculate speaker
+        durations = {s: 0 for s in allSpeaker}
+
+        # add the final segment
+        # start, end, speaker = speakerList[lastSpeakerSegIdx]
+        coveredEnd = segment.start
+        # if (end > segment.end):
+        #     thisSpeaker = speaker
+        # else:
+        #     if (end > segment.start):
+        #         realDuration = end - max(start, segment.start)
+        #         durations[speaker] += realDuration
+        #         coveredEnd = end
+        #     lastSpeakerSegIdx += 1
+        while coveredEnd < segment.end:
+            start, end, speaker = speakerList[lastSpeakerSegIdx]
+            if (start > segment.end):
+                break
+            realDuration = min(end, segment.end) - max(start, coveredEnd)
+            durations[speaker] += realDuration
+            coveredEnd = end
+            if (end <= segment.end):
+                lastSpeakerSegIdx += 1
+
+        thisSpeaker = max(durations, key=durations.get)
+        if thisSpeaker != lastSpeaker or segment.start - lastEnd > 5:
+            scriptFP.write(f"{thisSpeaker}\n")
+            lastSpeaker = thisSpeaker
+
+        scriptFP.write(f"{segment.text.strip()}\t{segment.start}\t{segment.end}\n")
+
+        pbar.update(segment.end - lastEnd)
+        lastEnd = segment.end
+
+    pbar.close()
+    scriptFP.close()
+
+
+
+
+    
     return 
 
 def generateM3U8(videoFile, vttFile, basename, cwd):
@@ -146,8 +159,10 @@ def main():
     scriptFile = f"{baseName}.script"
 
     # transcribe:
-    extractAudio(videoFile, f"{cwd}/{audioFile}")
+    # extractAudio(videoFile, f"{cwd}/{audioFile}")
     transcribe(f"{cwd}/{audioFile}", f"{cwd}/{vttFile}", f"{cwd}/{scriptFile}")
+    # extractAudio(videoFile, f"working/test.wav")
+    # transcribe(f"working/test.wav", f"working/test.vtt", f"working/test.script")
     # m3u8File = generateM3U8(videoFile, vttFile, baseName, cwd)
     # print(m3u8File)
 
