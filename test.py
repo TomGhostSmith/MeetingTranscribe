@@ -44,22 +44,30 @@ def extractAudio(videoFile, audioFile):
     # cmd = f'ffmpeg -i {videoFile} -vn -acodec libmp3lame -ar 16000 -ss 00:00:00 -to 00:05:00 -ac 1 {audioFile}'
     subprocess.run(cmd, shell=True)
 
-def transcribe(audioFile, vttFile, scriptFile):
+def transcribe(audioFile, vttFile, scriptFile, prompt, numSpeaker=None):
     device = "cuda"
-    prompt = (
-        "This is a group meeting with 诗涛 "
-        "They are discussing a paper in metagenomic fields."
-    )
+    # prompt = (
+    #     "This is a group meeting with 诗涛 "
+    #     "They are discussing a paper in metagenomic fields."
+    # )
     model = WhisperModel("model/faster-whisper-large-v3", device="cuda", compute_type="float16")
 
-    segments, info = model.transcribe(audioFile, beam_size=5, vad_filter=True, initial_prompt=prompt)
+    # segments, info = model.transcribe(audioFile, beam_size=5, vad_filter=False, initial_prompt=prompt)
+    # segments, info = model.transcribe(audioFile, beam_size=5, vad_filter=True, initial_prompt=prompt)
+    segments, info = model.transcribe(audioFile, beam_size=5, vad_filter=True, initial_prompt=prompt, vad_parameters=dict(min_silence_duration_ms=3000))  # add this to avoid repetition, but may lead to over-segmentation
+    # segments, info = model.transcribe(audioFile, beam_size=5, vad_filter=True, initial_prompt=prompt, vad_parameters=dict(
+    #         min_silence_duration_ms=5000,   # was 3000
+    #         # speech_pad_ms=300,              # keep a small pad before/after speech
+    #         # threshold=0.3                   # adjust depending on your environment)
+
+    # ))
 
     videoLength = getVideoLength(audioFile)
 
     scriptFP = open(scriptFile, 'wt')
     vttFP = open(vttFile, 'wt')
     vttFP.write("WEBVTT\n")
-    speakerFP = open("working/speaker.txt", 'wt')
+    # speakerFP = open("working/speaker.txt", 'wt')
 
     # recognize speaker
     pipeline = Pipeline.from_pretrained("model/speaker-diarization-community-1")
@@ -70,18 +78,18 @@ def transcribe(audioFile, vttFile, scriptFile):
     # apply pretrained pipeline (with optional progress hook)
     with ProgressHook() as hook:
         # output = pipeline(audioFile, hook=hook)  # runs locally
-        output = pipeline(audioFile, hook=hook, num_speakers=4)  # runs locally
+        output = pipeline(audioFile, hook=hook, num_speakers=numSpeaker)  # runs locally
 
     # print the result
     allSpeaker = set()
     speakerList = []
     for turn, speaker in output.speaker_diarization:
-        speakerFP.write(f"{turn.start:.2f}\t{turn.end:.2f}\t{speaker}\n")
+        # speakerFP.write(f"{turn.start:.2f}\t{turn.end:.2f}\t{speaker}\n")
         speakerList.append([turn.start, turn.end, speaker])
         # print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
         allSpeaker.add(speaker)
 
-    speakerFP.close()
+    # speakerFP.close()
 
 
     pbar = tqdm(total=videoLength, unit="sec", desc="transcribe")
@@ -90,8 +98,11 @@ def transcribe(audioFile, vttFile, scriptFile):
     lastSpeakerSegIdx = 0
     for segment in segments:
         # print(segment.text.strip() + ", " + str(segment.start) + ", " + str(segment.end))
+        if (segment.end - segment.start < 0.3):
+            continue
         vttFP.write(f"\n{formatTime(segment.start)} --> {formatTime(segment.end)}\n")
         vttFP.write(segment.text.strip() + "\n")
+
 
 
         # calculate speaker
@@ -108,7 +119,7 @@ def transcribe(audioFile, vttFile, scriptFile):
         #         durations[speaker] += realDuration
         #         coveredEnd = end
         #     lastSpeakerSegIdx += 1
-        while coveredEnd < segment.end:
+        while coveredEnd < segment.end and lastSpeakerSegIdx < len(speakerList):
             start, end, speaker = speakerList[lastSpeakerSegIdx]
             if (start > segment.end):
                 break
@@ -150,7 +161,8 @@ def generateM3U8(videoFile, vttFile, basename, cwd):
     return m3u8File
 
 def main():
-    videoFile = "/Data/Video/test/sample.mp4"
+    # videoFile = "/Data/Video/test/sample.mp4"
+    videoFile = "/Data/Video/day1/day1-1/1.mp4"
     fileName = os.path.basename(videoFile)
     cwd = os.path.dirname(videoFile)
     baseName = fileName[:fileName.rfind(".")]
@@ -158,12 +170,16 @@ def main():
     vttFile = f"{baseName}.vtt"
     scriptFile = f"{baseName}.script"
 
+    prompt = (
+        "This is a Welcome and Opening Remarks for an academic meeting on AI in biology"
+    )
+
     # transcribe:
-    # extractAudio(videoFile, f"{cwd}/{audioFile}")
-    transcribe(f"{cwd}/{audioFile}", f"{cwd}/{vttFile}", f"{cwd}/{scriptFile}")
+    extractAudio(videoFile, f"{cwd}/{audioFile}")
+    transcribe(f"{cwd}/{audioFile}", f"{cwd}/{vttFile}", f"{cwd}/{scriptFile}", prompt)
     # extractAudio(videoFile, f"working/test.wav")
     # transcribe(f"working/test.wav", f"working/test.vtt", f"working/test.script")
-    # m3u8File = generateM3U8(videoFile, vttFile, baseName, cwd)
+    m3u8File = generateM3U8(videoFile, vttFile, baseName, cwd)
     # print(m3u8File)
 
 if (__name__ == "__main__"):

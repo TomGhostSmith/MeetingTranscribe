@@ -25,7 +25,7 @@
           <div v-for="(seg, t) in scripts" :key="t" >
             <p class="speaker">{{ seg[0] }}: </p>
             <p>
-              <span class="script" v-for="(s, t) in seg[1]" :key="t" :style="getColor(s[1], s[2])" @click="jumpTo(s[1])">{{ s[0] }}</span>
+              <span class="script" v-for="(s, t) in seg[1]" :key="t" :style="getColor(s[1], s[2])" @click="jumpTo(s[1])">{{ s[0] + ' ' }}</span>
             </p>
           </div>
         </div>
@@ -46,7 +46,7 @@ export default {
   name: 'HelloWorld',
   data() {
       return {
-          fileName: "sample",
+          fileName: "1",
           scripts: [],
           hls: null,
           currentTime: 0

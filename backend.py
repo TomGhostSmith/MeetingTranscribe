@@ -6,7 +6,8 @@ app = Flask(__name__)
 CORS(app, supports_credentials=True)  # Enables CORS for all routes
 
 # Folder where your video files (.m3u8, .ts, etc.) are located
-VIDEO_DIR = "/Data/Video/test"
+# VIDEO_DIR = "/Data/Video/test"
+VIDEO_DIR = "/Data/Video/day1/day1-1"
 
 @cross_origin(methods=["GET"])
 @app.route("/file/<path:filename>")
